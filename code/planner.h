@@ -1,5 +1,4 @@
 #include <iostream>
-#include <set>
 #include <queue>
 #include <list>
 #include <utility>
@@ -8,6 +7,7 @@
 #include <map>
 #include <unordered_map>
 #include <limits>
+#include <algorithm>
 
 #define NUMOFDIRS 9
 
@@ -44,6 +44,7 @@ private:
     std::priority_queue<Cell> open_list_;
     std::unordered_map<int,Cell> closed_list_;
     std::unordered_map<int,Pair> came_from_;
+    std::unordered_map<int,Pair> came_from_dijkstra_;
     bool goal_reached_;
 
     void dijkstra(int start_x,int start_y);
@@ -54,14 +55,14 @@ private:
 
     int getMapIndex(const int x,const int y);
 
-    bool isObstacle(const int pose_x,const int pose_y);
-
     bool isCellValid(const int x,const int y);
 
-    Pair getPath(int target_pose_X,int target_pose_Y);
+    std::vector<Pair> getPath(int target_pose_X,int target_pose_Y);
+    int getPathLength(int target_pose_X, int target_pose_Y);
 
     std::vector<Pair> getNeighibors(const int x,const int y);
 
+    Pair minimumCostPath();
 
 public:
     Planner(double *map,

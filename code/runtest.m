@@ -59,7 +59,7 @@ while (true)
     
     % compute movetime for the target
     movetime = max(1, ceil(etime(clock,t0)));
-    etime(clock,t0)
+    etime(clock,t0);
     if (newrobotpos(1) == robotpos(1) && newrobotpos(2) == robotpos(2))
         numofmoves = numofmoves - 1;
     end

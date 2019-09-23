@@ -11,6 +11,11 @@
 /* Output Arguments */
 #define ACTION_OUT plhs[0]
 
+int counter = true;
+int steps;
+std::vector<Pair> path;
+// Planner plan;
+
 Planner::Planner(double *map,
                  int collision_thresh,
                  int x_size,
@@ -24,10 +29,7 @@ Planner::Planner(double *map,
         y_size_ = y_size;
         target_steps_ = target_steps;
         target_traj_ = target_traj;
-        g_values_ = new double[x_size_ * y_size_];
-        std::fill_n(g_values_, x_size_ * y_size_, INT_MAX);
         dijkstra_cost_ = new double[x_size_ * y_size_];
-        std::fill_n(dijkstra_cost_, x_size_ * y_size_, INT_MAX);
 }
 void Planner::execute(int robot_pose_X,
                       int robot_pose_Y,
@@ -36,59 +38,24 @@ void Planner::execute(int robot_pose_X,
                       int curr_time,
                       double *action_ptr)
 {       
-        int index_current = getMapIndex(robot_pose_X, robot_pose_Y);
-        int target_index = getMapIndex(target_pose_X, target_pose_Y);
-        g_values_[index_current] = 0.0;
-        double f_value = calculateHeuristic(robot_pose_X, robot_pose_Y, target_pose_X, target_pose_Y) + g_values_[index_current];
-        open_list_.push(Cell(f_value, robot_pose_X, robot_pose_Y));
-        dijkstra(robot_pose_X,robot_pose_Y);
-        while (!open_list_.empty())
-        {
-                Cell current = open_list_.top();
-                index_current = getMapIndex(current.x_, current.y_);
-                if (index_current == target_index)
-                {
-                        Pair next_step = getPath(target_pose_X, target_pose_Y);
-                        action_ptr[0] = next_step.first;
-                        action_ptr[1] = next_step.second;
-                        return;
-                }
-                closed_list_.insert({index_current, current});
-                open_list_.pop();
-                Pair current_xy = std::make_pair(current.x_, current.y_);
-                for (const auto &i : getNeighibors(current.x_, current.y_))
-                {
-                        int index_neighibors = getMapIndex(i.first, i.second);
-                        if (isCellValid(i.first, i.second) && closed_list_.find(index_neighibors) == closed_list_.end())
-                        {
-                                double g_value_update = g_values_[index_current] + map_[index_neighibors];
-                                if (g_values_[index_neighibors] > g_value_update)
-                                {
-                                        came_from_[index_neighibors] = current_xy;
-                                        g_values_[index_neighibors] = g_value_update;
-                                        double f_value_neighibor = calculateHeuristic(i.first, i.second, target_pose_X, target_pose_Y) + g_values_[index_neighibors];
-                                        open_list_.push(Cell(f_value_neighibor, i.first, i.second));
-                                }
-                        }
-                }
+        if (counter){
+                dijkstra(robot_pose_X,robot_pose_Y);
+                Pair min_cost_trajectory_point = minimumCostPath();
+                path = getPath(min_cost_trajectory_point.first,min_cost_trajectory_point.second);
+                steps = path.size()-2;
+                counter = false;
         }
-        action_ptr[0] = robot_pose_X;
-        action_ptr[1] = robot_pose_Y;
+        Pair nextStep;
+        if (steps > 0){
+           nextStep = path[steps];
+           steps--;
+        }
+        else{
+                nextStep = path[steps];
+        }
+        action_ptr[0] = nextStep.first;
+        action_ptr[1] = nextStep.second;
         return;
-}
-
-bool Planner::isObstacle(const int pose_X, const int pose_Y)
-{
-        return map_[getMapIndex(pose_X, pose_Y)] < collision_thresh_;
-}
-
-double Planner::calculateHeuristic(int robot_pose_X,
-                                   int robot_pose_Y,
-                                   int target_pose_X,
-                                   int target_pose_Y)
-{
-        // return (double)std::max(std::abs(robot_pose_X - target_pose_X), std::abs(robot_pose_Y - target_pose_Y));
-        return dijkstra_cost_[getMapIndex(robot_pose_X,robot_pose_Y)];
 }
 
 int Planner::getMapIndex(const int x, const int y)
@@ -117,21 +84,36 @@ std::vector<Pair> Planner::getNeighibors(const int x, const int y)
         return neighibors;
 }
 
-Pair Planner::getPath(int target_pose_X, int target_pose_Y)
+std::vector<Pair> Planner::getPath(int target_pose_X, int target_pose_Y)
 {
         Pair current = std::make_pair(target_pose_X, target_pose_Y);
         std::vector<Pair> path{current};
         int current_index = getMapIndex(current.first,current.second);
-        while (came_from_.find(current_index) != came_from_.end())
+        while (came_from_dijkstra_.find(current_index) != came_from_dijkstra_.end())
         {
-                current = came_from_[current_index];
+                current = came_from_dijkstra_[current_index];
                 current_index = getMapIndex(current.first,current.second);
                 path.emplace_back(current);
         }
-        return path[path.size() - 2];
+        return path;
+}
+
+int Planner::getPathLength(int target_pose_X, int target_pose_Y)
+{
+        Pair current = std::make_pair(target_pose_X, target_pose_Y);
+        std::vector<Pair> path{current};
+        int current_index = getMapIndex(current.first,current.second);
+        while (came_from_dijkstra_.find(current_index) != came_from_dijkstra_.end())
+        {
+                current = came_from_dijkstra_[current_index];
+                current_index = getMapIndex(current.first,current.second);
+                path.emplace_back(current);
+        }
+        return path.size();
 }
 
 void Planner::dijkstra(int start_x, int start_y){
+        std::fill_n(dijkstra_cost_, x_size_ * y_size_, INT_MAX);
         std::priority_queue<Cell> list;
         int src_index = getMapIndex(start_x,start_y);
         dijkstra_cost_[src_index] = 0.0;
@@ -148,11 +130,28 @@ void Planner::dijkstra(int start_x, int start_y){
                                 if (dijkstra_cost_[neighibor_index] > cost){
                                         dijkstra_cost_[neighibor_index] = cost;
                                         list.push(Cell(cost,neighibor.first,neighibor.second));
+                                        came_from_dijkstra_[neighibor_index] = std::make_pair(current.x_,current.y_);
                                 }
                         }
                 }
         }
         return;
+}
+
+
+
+Pair Planner::minimumCostPath(){
+        std::map<double,Pair> cost_on_trajectory;
+        for(int i=0;i<target_steps_;i++){
+                int goalposeX = (int) target_traj_[i];
+                int goalposeY = (int) target_traj_[i+target_steps_];
+                int index = getMapIndex(goalposeX,goalposeY);
+                int path_length = getPathLength(goalposeX,goalposeY);
+                if (i>path_length)
+                        cost_on_trajectory[(i - path_length)*map_[index] + dijkstra_cost_[index]] = std::make_pair(goalposeX,goalposeY);
+        }
+        Pair min_cost_trajectory_point = cost_on_trajectory[cost_on_trajectory.begin()->first];
+        return min_cost_trajectory_point;
 }
 
 void mexFunction(int nlhs, mxArray *plhs[],
@@ -225,8 +224,8 @@ void mexFunction(int nlhs, mxArray *plhs[],
 
         /* Do the actual planning in a subroutine */
         //     planner(map, collision_thresh, x_size, y_size, robotposeX, robotposeY, target_steps, targettrajV, targetposeX, targetposeY, curr_time, &action_ptr[0]);
-        Planner astar(map, collision_thresh, x_size, y_size, target_steps, targettrajV);
-        astar.execute(robotposeX, robotposeY, targetposeX, targetposeY, curr_time, action_ptr);
+        Planner plan(map, collision_thresh, x_size, y_size, target_steps, targettrajV);
+        plan.execute(robotposeX, robotposeY, targetposeX, targetposeY, curr_time, action_ptr);
         //     printf("DONE PLANNING!\n");
         return;
 }
