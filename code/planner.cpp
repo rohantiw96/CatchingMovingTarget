@@ -11,10 +11,9 @@
 /* Output Arguments */
 #define ACTION_OUT plhs[0]
 
-int counter = true;
-int steps;
-std::vector<Pair> path;
-// Planner plan;
+int Planner::run_flag_;
+int Planner::steps_;
+std::vector<Pair> Planner::path_;
 
 Planner::Planner(double *map,
                  int collision_thresh,
@@ -37,24 +36,31 @@ void Planner::execute(int robot_pose_X,
                       int target_pose_Y,
                       int curr_time,
                       double *action_ptr)
-{       
-        if (counter){
-                dijkstra(robot_pose_X,robot_pose_Y);
-                Pair min_cost_trajectory_point = minimumCostPath();
-                path = getPath(min_cost_trajectory_point.first,min_cost_trajectory_point.second);
-                steps = path.size()-2;
-                counter = false;
+{
+        if (run_flag_)
+        {
+                dijkstra(robot_pose_X, robot_pose_Y);
+                std::vector<int> min_cost_trajectory_point = minimumCostPath();
+                path_ = getPath(min_cost_trajectory_point[1], min_cost_trajectory_point[2]);
+                for (int i = 0;i<min_cost_trajectory_point[0]-1;i++){
+
+                        path_.insert(path_.begin()+min_cost_trajectory_point[5],std::make_pair(min_cost_trajectory_point[3],min_cost_trajectory_point[4]));
+                }
+                steps_ = path_.size() - 2;
+                run_flag_ = false;
         }
-        Pair nextStep;
-        if (steps > 0){
-           nextStep = path[steps];
-           steps--;
+        Pair next_step;
+        if (steps_ > 0)
+        {
+                next_step = path_[steps_];
+                steps_--;
         }
         else{
-                nextStep = path[steps];
+                next_step = path_[steps_];
         }
-        action_ptr[0] = nextStep.first;
-        action_ptr[1] = nextStep.second;
+        printf("The point X = %d ,Y = %d",next_step.first,next_step.second);
+        action_ptr[0] = next_step.first;
+        action_ptr[1] = next_step.second;
         return;
 }
 
@@ -88,11 +94,12 @@ std::vector<Pair> Planner::getPath(int target_pose_X, int target_pose_Y)
 {
         Pair current = std::make_pair(target_pose_X, target_pose_Y);
         std::vector<Pair> path{current};
-        int current_index = getMapIndex(current.first,current.second);
-        while (came_from_dijkstra_.find(current_index) != came_from_dijkstra_.end())
+        int current_index = getMapIndex(current.first, current.second);
+        
+        while (came_from_.find(current_index) != came_from_.end())
         {
-                current = came_from_dijkstra_[current_index];
-                current_index = getMapIndex(current.first,current.second);
+                current = came_from_[current_index];
+                current_index = getMapIndex(current.first, current.second);
                 path.emplace_back(current);
         }
         return path;
@@ -102,35 +109,50 @@ int Planner::getPathLength(int target_pose_X, int target_pose_Y)
 {
         Pair current = std::make_pair(target_pose_X, target_pose_Y);
         std::vector<Pair> path{current};
-        int current_index = getMapIndex(current.first,current.second);
-        while (came_from_dijkstra_.find(current_index) != came_from_dijkstra_.end())
+        int current_index = getMapIndex(current.first, current.second);
+        double min_cost = std::numeric_limits<double>::max();
+        int i = 0;
+        while (came_from_.find(current_index) != came_from_.end())
         {
-                current = came_from_dijkstra_[current_index];
-                current_index = getMapIndex(current.first,current.second);
+                if (min_cost > map_[current_index]) {
+                        min_cost_vector_index_ = i;
+                        min_cost_point_x_ = current.first;
+                        min_cost_point_y_ = current.second;
+                        min_cost = map_[current_index];
+                }
+                current = came_from_[current_index];
+                current_index = getMapIndex(current.first, current.second);
                 path.emplace_back(current);
+                i++;
         }
         return path.size();
 }
 
-void Planner::dijkstra(int start_x, int start_y){
+void Planner::dijkstra(int start_x, int start_y)
+{
         std::fill_n(dijkstra_cost_, x_size_ * y_size_, INT_MAX);
         std::priority_queue<Cell> list;
-        int src_index = getMapIndex(start_x,start_y);
+        int src_index = getMapIndex(start_x, start_y);
         dijkstra_cost_[src_index] = 0.0;
-        list.push(Cell(dijkstra_cost_[src_index],start_x,start_y));
-        while(!list.empty()){
+        list.push(Cell(dijkstra_cost_[src_index], start_x, start_y));
+        while (!list.empty())
+        {
                 Cell current = list.top();
-                int current_index = getMapIndex(current.x_,current.y_);
+                int current_index = getMapIndex(current.x_, current.y_);
                 list.pop();
-                for(const auto& neighibor:getNeighibors(current.x_,current.y_)){
-                        if(isCellValid(neighibor.first,neighibor.second))
+                for (int i=0;i<dX_.size();i++)
+                {
+                        int neighibor_X =  current.x_+dX_[i];
+                        int neighibor_Y = current.y_+dY_[i];
+                        if (isCellValid(neighibor_X, neighibor_Y))
                         {
-                                int neighibor_index = getMapIndex(neighibor.first,neighibor.second);
-                                double cost =  dijkstra_cost_[current_index] + map_[neighibor_index];
-                                if (dijkstra_cost_[neighibor_index] > cost){
+                                int neighibor_index = getMapIndex(neighibor_X, neighibor_Y);
+                                double cost = dijkstra_cost_[current_index] + map_[neighibor_index];
+                                if (dijkstra_cost_[neighibor_index] > cost)
+                                {
                                         dijkstra_cost_[neighibor_index] = cost;
-                                        list.push(Cell(cost,neighibor.first,neighibor.second));
-                                        came_from_dijkstra_[neighibor_index] = std::make_pair(current.x_,current.y_);
+                                        list.push(Cell(cost, neighibor_X, neighibor_Y));
+                                        came_from_[neighibor_index] = std::make_pair(current.x_, current.y_);
                                 }
                         }
                 }
@@ -138,20 +160,22 @@ void Planner::dijkstra(int start_x, int start_y){
         return;
 }
 
-
-
-Pair Planner::minimumCostPath(){
-        std::map<double,Pair> cost_on_trajectory;
-        for(int i=0;i<target_steps_;i++){
-                int goalposeX = (int) target_traj_[i];
-                int goalposeY = (int) target_traj_[i+target_steps_];
-                int index = getMapIndex(goalposeX,goalposeY);
-                int path_length = getPathLength(goalposeX,goalposeY);
-                if (i>path_length)
-                        cost_on_trajectory[(i - path_length)*map_[index] + dijkstra_cost_[index]] = std::make_pair(goalposeX,goalposeY);
+std::vector<int> Planner::minimumCostPath()
+{
+        std::map<double, std::vector<int>> cost_on_trajectory;
+        for (int i = 0; i < target_steps_; i++)
+        {
+                int goalposeX = (int)target_traj_[i];
+                int goalposeY = (int)target_traj_[i + target_steps_];
+                int index = getMapIndex(goalposeX, goalposeY);
+                int path_length = getPathLength(goalposeX, goalposeY);
+                if (i > path_length){
+                        int wait_time = i - path_length;
+                        // cost_on_trajectory[() * map_[min_cost_point_] + dijkstra_cost_[index]] = std::make_pair(goalposeX, goalposeY);
+                        cost_on_trajectory[(wait_time) * map_[getMapIndex(min_cost_point_x_,min_cost_point_y_)] + dijkstra_cost_[index]] = std::vector<int>{wait_time,goalposeX, goalposeY,min_cost_point_x_,min_cost_point_y_,min_cost_vector_index_};
+                }
         }
-        Pair min_cost_trajectory_point = cost_on_trajectory[cost_on_trajectory.begin()->first];
-        return min_cost_trajectory_point;
+        return cost_on_trajectory[cost_on_trajectory.begin()->first];
 }
 
 void mexFunction(int nlhs, mxArray *plhs[],
@@ -223,7 +247,10 @@ void mexFunction(int nlhs, mxArray *plhs[],
         int collision_thresh = (int)mxGetScalar(COLLISION_THRESH);
 
         /* Do the actual planning in a subroutine */
-        //     planner(map, collision_thresh, x_size, y_size, robotposeX, robotposeY, target_steps, targettrajV, targetposeX, targetposeY, curr_time, &action_ptr[0]);
+        if (curr_time == 0.0)
+        {
+                Planner::run_flag_ = true;
+        }
         Planner plan(map, collision_thresh, x_size, y_size, target_steps, targettrajV);
         plan.execute(robotposeX, robotposeY, targetposeX, targetposeY, curr_time, action_ptr);
         //     printf("DONE PLANNING!\n");
